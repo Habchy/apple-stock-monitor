@@ -1,6 +1,6 @@
 # 🍷 Apple LA Burgundy Stock Monitor
 
-A tiny, dependency-free stock monitor for the **Burgundy iPhone 18 Pro Max** in Los Angeles. It checks Apple's live pickup inventory every five minutes and sends a polished Discord alert with `@everyone` when either target configuration appears.
+A tiny, dependency-free stock monitor for the **Burgundy iPhone 18 Pro Max** in Los Angeles. It checks Apple's live pickup inventory every five minutes and sends a polished Discord alert with `@everyone` when either target configuration is independently confirmed available by two Apple storefront endpoints.
 
 ## What it watches
 
@@ -11,9 +11,17 @@ A tiny, dependency-free stock monitor for the **Burgundy iPhone 18 Pro Max** in 
 
 Stores: Sherman Oaks, Century City, Beverly Center, The Grove, Third Street Promenade, Topanga, Northridge, Glendale Galleria, The Americana at Brand, and Tower Theatre.
 
-## Why this is tiny
+## Two-source Apple verification
 
-There are **zero pip dependencies**. `monitor.py` uses only Python's standard library. One Apple request checks both SKUs, GitHub Actions handles the five-minute schedule, and a tiny cached fingerprint prevents duplicate alerts for the same availability state.
+The monitor deliberately uses Apple's storefront data in two stages:
+
+1. **Primary discovery:** `pickup-message` checks both Burgundy SKUs in one request.
+2. **Confirmation:** if the primary endpoint reports a candidate, `fulfillment-messages` independently checks that exact SKU.
+3. An automatic alert is sent only when the **same SKU and store** have `pickupDisplay == available` on both Apple responses.
+
+This stays efficient because normal no-stock runs make only the single primary request. The extra Apple request happens only when there is something worth verifying.
+
+There are **zero pip dependencies**. `monitor.py` uses only Python's standard library. GitHub Actions handles the five-minute schedule, and a tiny cached fingerprint prevents duplicate alerts for the same confirmed availability state.
 
 ## Setup
 
@@ -27,9 +35,9 @@ There are **zero pip dependencies**. `monitor.py` uses only Python's standard li
 
 ## Automatic alert behavior
 
-When stock appears, Discord receives an `@everyone` message plus an embed listing the storage size, Apple Store, and Apple's current pickup quote. Identical inventory states are deduplicated. If stock disappears, the state resets, so a later restock can alert again.
+When stock is cross-verified, Discord receives an `@everyone` message plus an embed listing the storage size, Apple Store, and Apple's current pickup quote. Identical confirmed inventory states are deduplicated. If confirmed stock disappears, the state resets, so a later restock can alert again.
 
-Scheduled checks stay completely silent when there is no new availability.
+Scheduled checks stay completely silent when there is no new confirmed availability.
 
 ## Manual live inventory check
 
@@ -39,9 +47,9 @@ Want to see what Apple is returning right now without waiting for a restock?
 2. Enable **`test_webhook`**.
 3. Run the workflow.
 
-This mode is **not simulated**. It calls the same live Apple pickup endpoint, checks the same two SKUs and ten stores, and runs the same parser as the automatic monitor. It then always posts the current result to Discord.
+This mode is **not simulated**. It performs the same live Apple discovery and cross-verification used by the automatic monitor, then always posts the current confirmed result to Discord.
 
-If stock exists, the Discord embed lists the real storage size, store, and Apple pickup quote. If nothing is available, it says that no monitored Burgundy stock is currently available.
+If confirmed stock exists, the Discord embed lists the real storage size, store, and Apple pickup quote. If nothing is confirmed, it says that no monitored Burgundy stock is currently confirmed.
 
 Manual checks are clearly labeled **Manual Live Check**, never alter the automatic deduplication state, and deliberately do **not** ping `@everyone`.
 
@@ -71,14 +79,14 @@ python3 -m unittest discover -s tests -v
 ```text
 .
 ├── .github/workflows/monitor.yml   # 5-minute schedule + manual live check trigger
-├── monitor.py                      # Apple check, dedupe, Discord alert
-├── tests/test_monitor.py           # Small behavior test suite
+├── monitor.py                      # Apple discovery, verification, dedupe, Discord alert
+├── tests/test_monitor.py           # Behavior and cross-verification tests
 ├── .gitignore
 └── README.md
 ```
 
 ## Notes
 
-GitHub scheduled workflows can occasionally start later than the exact cron time during periods of high Actions load. The monitor checks Apple's live pickup endpoint when each run actually starts.
+GitHub scheduled workflows can occasionally start later than the exact cron time during periods of high Actions load. The monitor checks Apple's live storefront endpoints when each run actually starts.
 
 This project is unofficial and is not affiliated with Apple or Discord.
