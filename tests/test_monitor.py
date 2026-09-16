@@ -1,4 +1,4 @@
-"""Behavior tests for the stock monitor's parsing, deduplication, and Discord payload."""
+"""Behavior tests for the stock monitor's parsing, deduplication, and Discord payloads."""
 
 import unittest
 
@@ -37,15 +37,29 @@ class MonitorTests(unittest.TestCase):
         ]
         self.assertEqual(monitor.fingerprint(a), monitor.fingerprint(list(reversed(a))))
 
-    def test_test_payload_is_clearly_marked_and_does_not_claim_real_stock(self):
-        """Manual webhook tests must prove delivery without pretending inventory exists."""
-        payload = monitor.test_discord_payload()
-        self.assertEqual(payload["content"], "@everyone")
-        self.assertIn("Test Successful", payload["embeds"][0]["title"])
-        self.assertIn("does not indicate stock", payload["embeds"][0]["description"])
+    def test_manual_payload_reports_real_available_inventory_without_ping(self):
+        """A manual live check should show Apple's parsed stock but never ping everyone."""
+        payload = monitor.manual_discord_payload([{
+            "sku": "MJW64LL/A",
+            "storage": "256 GB",
+            "store": "Apple Sherman Oaks",
+            "store_id": "R148",
+            "pickup": "Today",
+        }])
+        self.assertEqual(payload["content"], "")
+        self.assertIn("Manual Live Check", payload["embeds"][0]["title"])
+        self.assertIn("256 GB", payload["embeds"][0]["fields"][0]["value"])
+        self.assertIn("Sherman Oaks", payload["embeds"][0]["fields"][0]["value"])
+
+    def test_manual_payload_reports_no_current_inventory(self):
+        """A manual live check should still send a useful message when Apple has no stock."""
+        payload = monitor.manual_discord_payload([])
+        self.assertEqual(payload["content"], "")
+        self.assertIn("Manual Live Check", payload["embeds"][0]["title"])
+        self.assertIn("No Burgundy stock", payload["embeds"][0]["description"])
 
     def test_discord_payload_pings_everyone_and_allows_the_mention(self):
-        """A stock alert must generate a real @everyone ping and a rich embed."""
+        """A real automatic stock alert must generate an @everyone ping and a rich embed."""
         payload = monitor.discord_payload([{
             "sku": "MJW64LL/A",
             "storage": "256 GB",
