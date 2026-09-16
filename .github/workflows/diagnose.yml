@@ -1,0 +1,72 @@
+name: Monitor Diagnostics
+
+# Temporary repair workflow: only a change to this file or an explicit manual run
+# starts it. It never sends Discord messages and never reads the webhook secret.
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/diagnose.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Inspect and enable the existing monitor
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          # Read the actual workflow state, not just its YAML schedule.
+          set -euo pipefail
+          gh api "repos/$REPOSITORY" --jq '{default_branch, archived, disabled, created_at}'
+          gh api "repos/$REPOSITORY/actions/workflows/monitor.yml" --jq '{id, name, path, state, created_at, updated_at}'
+          # Enabling the user's monitor is idempotent and does not dispatch a run.
+          gh api --method PUT "repos/$REPOSITORY/actions/workflows/monitor.yml/enable"
+          gh api "repos/$REPOSITORY/actions/workflows/monitor.yml" --jq '{id, state}'
+          gh api "repos/$REPOSITORY/actions/runs?event=schedule&per_page=5" --jq '{total_count, runs: [.workflow_runs[] | {id, event, status, conclusion, created_at}]}'
+
+      - name: Inspect live Apple response shapes without alerting
+        run: |
+          # Print only public inventory fields. No cookies or credentials are used.
+          python3 - <<'PY'
+          import json
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+
+          probes = [
+              ('pickup', '/shop/retail/pickup-message', {'location': '90077', 'parts.0': 'MJW64LL/A', 'parts.1': 'MJWA4LL/A'}),
+              ('fulfillment', '/shop/fulfillment-messages', {'fae': 'true', 'pl': 'true', 'mts.0': 'regular', 'cppart': 'UNLOCKED/US', 'parts.0': 'MJWA4LL/A', 'location': '90077'}),
+              ('control', '/shop/retail/pickup-message', {'store': 'R148', 'parts.0': 'MJW84LL/A'}),
+          ]
+          for label, path, params in probes:
+              try:
+                  request = Request('https://www.apple.com' + path + '?' + urlencode(params), headers={'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json', 'Cache-Control': 'no-cache'})
+                  with urlopen(request, timeout=20) as response:
+                      payload = json.load(response)
+                      print(label, 'HTTP', response.status, 'head', payload.get('head'))
+                  body = payload.get('body', {})
+                  print(label, 'body_keys', list(body))
+                  # Record which documented-by-observation wrapper actually exists.
+                  for keys in [('stores',), ('pickupMessage', 'stores'), ('content', 'pickupMessage', 'stores'), ('PickupMessage', 'stores')]:
+                      value = body
+                      for key in keys:
+                          value = value.get(key) if isinstance(value, dict) else None
+                      if not isinstance(value, list):
+                          continue
+                      print(label, 'stores_path', 'body.' + '.'.join(keys), 'store_count', len(value))
+                      for store in value:
+                          parts = {}
+                          for sku, info in store.get('partsAvailability', {}).items():
+                              regular = info.get('messageTypes', {}).get('regular', {})
+                              parts[sku] = {'status': info.get('pickupDisplay'), 'title': regular.get('storePickupProductTitle'), 'quote': regular.get('storePickupQuote', info.get('storePickupQuote', info.get('pickupSearchQuote')))}
+                          print(json.dumps({'probe': label, 'store': store.get('storeNumber'), 'name': store.get('storeName'), 'parts': parts}, ensure_ascii=True))
+              except Exception as error:
+                  # These URLs carry no secrets; the short exception is safe to log.
+                  print(label, type(error).__name__, str(error)[:180])
+          PY
