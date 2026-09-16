@@ -1,0 +1,7 @@
+# Runtime state is cached by GitHub Actions and must never be committed.
+.stock-state
+
+# Python and operating-system generated files.
+__pycache__/
+*.pyc
+.DS_Store
