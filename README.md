@@ -1,92 +1,84 @@
-# 🍷 Apple LA Burgundy Stock Monitor
+<div align="center">
 
-A tiny, dependency-free stock monitor for the **Burgundy iPhone 18 Pro Max** in Los Angeles. It checks Apple's live pickup inventory every five minutes and sends a polished Discord alert with `@everyone` when either target configuration is independently confirmed available by two Apple storefront endpoints.
+# 🍷 Apple LA Stock Monitor
+
+**Quiet until it matters.**
+
+Burgundy iPhone pickup alerts · Python standard library · Discord
+
+</div>
 
 ## What it watches
 
-| Model | Apple SKU |
-| --- | --- |
-| iPhone 18 Pro Max, 256 GB, Burgundy | `MJW64LL/A` |
-| iPhone 18 Pro Max, 512 GB, Burgundy | `MJWA4LL/A` |
+| Configuration | Exact Apple SKU |
+| :--- | :--- |
+| iPhone 18 Pro Max · 256 GB · Burgundy | `MJW64LL/A` |
+| iPhone 18 Pro Max · 512 GB · Burgundy | `MJWA4LL/A` |
 
-Stores: Sherman Oaks, Century City, Beverly Center, The Grove, Third Street Promenade, Topanga, Northridge, Glendale Galleria, The Americana at Brand, and Tower Theatre.
+**10 stores:** Sherman Oaks, Century City, Beverly Center, The Grove, Third Street Promenade, Topanga, Northridge, Glendale Galleria, The Americana at Brand, and Tower Theatre. Pasadena and other unlisted stores are excluded.
 
-## Two-source Apple verification
+## How an alert qualifies
 
-The monitor deliberately uses Apple's storefront data in two stages:
+1. Query both SKUs around `90077` in a single primary pickup request.
+2. Validate Apple's product names and inventory status for every one of the **20 SKU/store pairs**. Query a missing store directly instead of treating it as sold out.
+3. For a positive candidate, try Apple's `fulfillment-messages` endpoint. An explicit unavailable result suppresses that pair's alert.
+4. If fulfillment is blocked or omits the store, require a **second, direct-store pickup request** to report the exact pair available. The message identifies this fallback accurately.
+5. Send one Burgundy-themed Discord embed with **`@everyone`**, storage, store, the latest pickup quote, check time, and verification method.
 
-1. **Primary discovery:** `pickup-message` checks both Burgundy SKUs in one request.
-2. **Confirmation:** if the primary endpoint reports a candidate, `fulfillment-messages` independently checks that exact SKU.
-3. An automatic alert is sent only when the **same SKU and store** have `pickupDisplay == available` on both Apple responses.
+These endpoints are both Apple's storefront, not independent inventory providers. Two checks cannot reserve stock or guarantee that it remains available at checkout.
 
-This stays efficient because normal no-stock runs make only the single primary request. The extra Apple request happens only when there is something worth verifying.
+> [!IMPORTANT]
+> Apple's fulfillment endpoint returned HTTP 541 from a hosted runner during diagnostics. The fallback does not bypass that restriction. It uses the already-working pickup endpoint and labels the confirmation accordingly.
 
-There are **zero pip dependencies**. `monitor.py` uses only Python's standard library. GitHub Actions handles the five-minute schedule, and a tiny cached fingerprint prevents duplicate alerts for the same confirmed availability state.
+## Schedule and proof
+
+The workflow is configured for **every five minutes** at minutes `02, 07, 12, 17, 22, 27, 32, 37, 42, 47, 52, 57`, around the clock. It also runs after monitor/code changes on `main`, and supports manual runs.
+
+A cron line is **configuration, not proof of execution**. In **Actions → Apple Stock Monitor**, look for runs whose trigger is **schedule**. Every completed check writes a summary containing all 20 statuses, candidate and confirmed counts, and the notification decision. A manual or push-triggered success does not prove scheduling works.
+
+GitHub documents scheduled workflows as best-effort: runs can start late or be dropped under load. No exact five-minute timing or zero-missed-restock guarantee is possible with this scheduler. Public-repository schedules can also be disabled after 60 days without repository activity. See [GitHub's scheduling documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule).
 
 ## Setup
 
-1. Create a Discord webhook for the channel where you want alerts.
-2. In this repository, open **Settings → Secrets and variables → Actions**.
-3. Create a repository secret named **`DISCORD_WEBHOOK_URL`** and paste the webhook URL as its value.
-4. That's it. The scheduled workflow checks automatically every five minutes.
+Store a channel webhook as the repository Actions secret **`DISCORD_WEBHOOK_URL`** under **Settings → Secrets and variables → Actions**. Never commit the secret. Automatic alerts explicitly permit `@everyone`; member notification settings can still affect notifications.
 
-> [!IMPORTANT]
-> For automatic stock alerts, `@everyone` must be permitted in the target Discord channel for the mention to actually notify members.
+For a **real live report**, open **Actions → Apple Stock Monitor → Run workflow**, select `main`, and enable `test_webhook`. It queries Apple and posts the real result even if there are no candidates. It does not mention anyone or load/save automatic alert state. If the API cannot be checked, the run fails instead of sending a misleading no-stock message.
 
-## Automatic alert behavior
+Discord requests use `wait=true`. A successful send records the returned **Discord message ID** in the job log, without exposing the webhook token.
 
-When stock is cross-verified, Discord receives an `@everyone` message plus an embed listing the storage size, Apple Store, and Apple's current pickup quote. Identical confirmed inventory states are deduplicated. If confirmed stock disappears, the state resets, so a later restock can alert again.
+## Quiet, small, and defensive
 
-Scheduled checks stay completely silent when there is no new confirmed availability.
+Normal complete no-stock checks make **one Apple request**, with no pip install, browser, database, or server. Extra GETs happen only for missing coverage, candidates, or one bounded transient retry.
 
-## Manual live inventory check
+Notification state stores individual SKU/store pairs, not a hash of the entire stock list. Identical stock does not re-ping. One store selling out does not cause a ping for another store. A pair becomes eligible for a new alert after primary inventory explicitly reports it unavailable and it subsequently returns.
 
-Want to see what Apple is returning right now without waiting for a restock?
+API/JSON/schema errors fail the run and preserve state. A webhook failure is not marked delivered. Runs are serialized rather than cancelling an alert midway. Manual reports skip the cache entirely. The job requires only repository contents read access.
 
-1. Open **Actions → Apple Stock Monitor → Run workflow**.
-2. Enable **`test_webhook`**.
-3. Run the workflow.
+The GitHub cache is best-effort storage: eviction, a cleared cache, or a crash after Discord accepted a message but before state was saved can cause a repeat alert. This is not an exactly-once messaging system. Migrating the old hash-based state may announce currently available stock once again.
 
-This mode is **not simulated**. It performs the same live Apple discovery and cross-verification used by the automatic monitor, then always posts the current confirmed result to Discord.
-
-If confirmed stock exists, the Discord embed lists the real storage size, store, and Apple pickup quote. If nothing is confirmed, it says that no monitored Burgundy stock is currently confirmed.
-
-Manual checks are clearly labeled **Manual Live Check**, never alter the automatic deduplication state, and deliberately do **not** ping `@everyone`.
-
-## Run locally
+## Local use
 
 ```bash
-# The monitor needs a Discord webhook because its purpose is to alert.
-export DISCORD_WEBHOOK_URL='your-webhook-url'
-python3 monitor.py
-```
-
-Run a manual live inventory report locally:
-
-```bash
-export TEST_WEBHOOK=true
-python3 monitor.py
-```
-
-Run the tests with:
-
-```bash
+# Run the offline regression suite; no network access or webhook is needed.
 python3 -m unittest discover -s tests -v
+
+# Supply the webhook through your environment, never the source file.
+export DISCORD_WEBHOOK_URL='your-private-discord-webhook-url'
+
+# Perform a real manual report without changing the automatic alert history.
+TEST_WEBHOOK=true python3 monitor.py
+
+# Perform one normal automatic check.
+TEST_WEBHOOK=false python3 monitor.py
 ```
 
-## Files
+## Repository
 
 ```text
-.
-├── .github/workflows/monitor.yml   # 5-minute schedule + manual live check trigger
-├── monitor.py                      # Apple discovery, verification, dedupe, Discord alert
-├── tests/test_monitor.py           # Behavior and cross-verification tests
-├── .gitignore
-└── README.md
+.github/workflows/monitor.yml  Five-minute configuration, tests, manual mode, cache
+monitor.py                    Validated Apple check, confirmation, Discord, state
+tests/test_monitor.py         Offline parser, failure, fallback, and delivery tests
+README.md                     Setup, behavior, and operational limitations
 ```
 
-## Notes
-
-GitHub scheduled workflows can occasionally start later than the exact cron time during periods of high Actions load. The monitor checks Apple's live storefront endpoints when each run actually starts.
-
-This project is unofficial and is not affiliated with Apple or Discord.
+Unofficial project. Not affiliated with Apple or Discord. Confirm your order before travelling.
