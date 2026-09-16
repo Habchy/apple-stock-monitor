@@ -36,7 +36,8 @@ jobs:
           persist-credentials: false
 
       - name: Run regression tests
-        run: python3 -m unittest discover -s tests -v
+        # Mocked tests must not write synthetic stock or receipt IDs to the real run summary.
+        run: GITHUB_STEP_SUMMARY='' python3 -m unittest discover -s tests -v -b
 
       # Manual reports neither read nor save the automatic notification state.
       # Include the attempt number so a re-run can save new state too.
