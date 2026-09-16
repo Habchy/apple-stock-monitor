@@ -1,0 +1,39 @@
+name: Mac TUI Tests
+
+# CI checks code, not stock. The Mac application owns its own polling timer.
+'on':
+  push:
+    branches: [main]
+    paths: ['*.py', 'Start.command', 'tests/**', '.github/workflows/ci.yml']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Python and launcher checks
+        run: |
+          # There is no pip install. Test the runner's actual Python and curses.
+          python3 --version
+          python3 -c 'import curses, fcntl, ssl'
+          bash -n Start.command
+
+      - name: Offline regression tests
+        # Prevent mocked stock from polluting GitHub's real run summary.
+        run: GITHUB_STEP_SUMMARY='' python3 -m unittest discover -s tests -v -b
+
+      - name: Actual terminal UI smoke test
+        run: python3 tests/smoke_terminal.py

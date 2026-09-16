@@ -1,26 +1,19 @@
-name: Apple Stock Monitor
-run-name: Apple stock | ${{ github.event_name }} | ${{ inputs.test_webhook && 'manual live report' || 'automatic check' }}
+name: Manual Cloud Stock Check
 
-on:
-  schedule:
-    # Still every five minutes; offset from the busiest minute at the top of the hour.
-    - cron: '2-59/5 * * * *'
-  push:
-    branches: [main]
-    paths: ['monitor.py', 'tests/**', '.github/workflows/watch.yml']
+# Deliberately manual-only. The Mac TUI now performs the repeating checks.
+# Removing cron and push prevents a recovered cloud timer from duplicating alerts.
+'on':
   workflow_dispatch:
     inputs:
       test_webhook:
         description: 'Send live Apple inventory to Discord even without stock (no @everyone)'
         required: true
         type: boolean
-        default: false
+        default: true
 
-# The monitoring job needs no repository writes and never exposes the webhook.
 permissions:
   contents: read
 
-# Finish an in-flight alert and state save before starting another check.
 concurrency:
   group: apple-stock-monitor
   cancel-in-progress: false
@@ -35,13 +28,8 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Run regression tests
-        # Mocked tests must not write synthetic stock or receipt IDs to the real run summary.
-        run: GITHUB_STEP_SUMMARY='' python3 -m unittest discover -s tests -v -b
-
-      # Manual reports neither read nor save the automatic notification state.
-      # Include the attempt number so a re-run can save new state too.
-      - name: Restore and save alert state
+      # Keep the old cloud history separate from the Mac's local state file.
+      - name: Restore and save cloud alert state
         if: ${{ !inputs.test_webhook }}
         uses: actions/cache@v6
         with:
@@ -50,9 +38,8 @@ jobs:
           restore-keys: |
             stock-state-
 
-      - name: Check Apple and alert Discord
+      - name: Check Apple and report to Discord
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          TEST_WEBHOOK: ${{ inputs.test_webhook || 'false' }}
-          PYTHONUNBUFFERED: '1'
+          TEST_WEBHOOK: ${{ inputs.test_webhook }}
         run: python3 monitor.py

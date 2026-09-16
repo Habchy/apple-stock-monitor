@@ -1,7 +1,14 @@
-# Runtime state is cached by GitHub Actions and must never be committed.
+# Runtime data and credentials belong outside the checkout.
 .stock-state
+.stock-state.tmp
+.env
+.env.*
+config.json
+state.json
+instance.lock
 
-# Python and operating-system generated files.
+# Python, OS, and locally generated archives.
 __pycache__/
 *.pyc
 .DS_Store
+*.zip
