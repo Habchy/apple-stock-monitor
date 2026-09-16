@@ -2,7 +2,7 @@ name: Apple Stock Monitor
 
 on:
   schedule:
-    # GitHub's shortest supported scheduled interval is five minutes.
+    # Five minutes is GitHub Actions' minimum supported cron interval.
     - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
@@ -24,13 +24,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
+      # v7 is the current checkout major and uses the modern Node runtime.
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
-      # Each run uses a unique cache key and restores the newest prior state. This keeps
-      # deduplication persistent without committing bot-generated files to the repository.
+      # v6 is the current cache major. Each run gets a unique save key while
+      # restore-keys loads the newest prior stock fingerprint for deduplication.
       - name: Restore alert state
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .stock-state
           key: stock-state-${{ github.run_id }}
