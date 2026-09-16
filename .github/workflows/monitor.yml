@@ -1,0 +1,44 @@
+name: Apple Stock Monitor
+
+on:
+  schedule:
+    # GitHub's shortest supported scheduled interval is five minutes.
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      test_webhook:
+        description: "Send a clearly labeled Discord test message instead of checking stock"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apple-stock-monitor
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Each run uses a unique cache key and restores the newest prior state. This keeps
+      # deduplication persistent without committing bot-generated files to the repository.
+      - name: Restore alert state
+        uses: actions/cache@v4
+        with:
+          path: .stock-state
+          key: stock-state-${{ github.run_id }}
+          restore-keys: |
+            stock-state-
+
+      - name: Check Apple and alert Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          TEST_WEBHOOK: ${{ inputs.test_webhook || 'false' }}
+        run: python3 monitor.py
