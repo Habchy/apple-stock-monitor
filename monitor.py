@@ -61,14 +61,17 @@ def fingerprint(results: list[dict[str, str]]) -> str:
     return hashlib.sha256("|".join(pairs).encode()).hexdigest() if pairs else ""
 
 
-def discord_payload(results: list[dict[str, str]]) -> dict:
-    """Build a compact Discord embed and explicitly permit the requested @everyone mention."""
-    fields = [{
+def _stock_fields(results: list[dict[str, str]]) -> list[dict[str, object]]:
+    """Format normalized Apple availability as reusable Discord embed fields."""
+    return [{
         "name": f"📱 {item['storage']} Burgundy",
         "value": f"**{item['storage']} • {item['store']}**\n{item['pickup']}",
         "inline": False,
     } for item in results]
 
+
+def discord_payload(results: list[dict[str, str]]) -> dict:
+    """Build the real automatic stock alert and explicitly permit the @everyone mention."""
     return {
         "content": "@everyone",
         "allowed_mentions": {"parse": ["everyone"]},
@@ -76,22 +79,32 @@ def discord_payload(results: list[dict[str, str]]) -> dict:
             "title": "🚨 iPhone 18 Pro Max Burgundy In Stock",
             "description": "Apple pickup inventory just became available.",
             "color": 0x7A263A,
-            "fields": fields,
+            "fields": _stock_fields(results),
             "footer": {"text": "Apple LA Stock Monitor • Check Apple immediately before driving"},
         }],
     }
 
 
-def test_discord_payload() -> dict:
-    """Build a clearly labeled test message for validating webhook delivery and mentions."""
+def manual_discord_payload(results: list[dict[str, str]]) -> dict:
+    """Report a real Apple API check to Discord without generating an @everyone notification."""
+    if results:
+        description = "Live Apple inventory was queried successfully. Current monitored availability:"
+        fields = _stock_fields(results)
+        color = 0x7A263A
+    else:
+        description = "Live Apple inventory was queried successfully. **No Burgundy stock is currently available** at the monitored stores."
+        fields = []
+        color = 0x5865F2
+
     return {
-        "content": "@everyone",
-        "allowed_mentions": {"parse": ["everyone"]},
+        "content": "",
+        "allowed_mentions": {"parse": []},
         "embeds": [{
-            "title": "✅ Apple Stock Monitor Test Successful",
-            "description": "Discord alerts are configured correctly. This test does not indicate stock availability.",
-            "color": 0x2ECC71,
-            "footer": {"text": "Apple LA Stock Monitor"},
+            "title": "🔎 Apple Stock Monitor • Manual Live Check",
+            "description": description,
+            "color": color,
+            "fields": fields,
+            "footer": {"text": "Real-time Apple API result • Manual check • No @everyone ping"},
         }],
     }
 
@@ -111,19 +124,22 @@ def send_discord(webhook: str, payload: dict) -> None:
 
 
 def main() -> int:
-    """Check inventory once, alert only on a new non-empty state, and persist that state."""
+    """Check inventory once, optionally report it, and alert only on a new automatic stock state."""
     webhook = os.environ.get("DISCORD_WEBHOOK_URL")
     if not webhook:
         print("DISCORD_WEBHOOK_URL is required", file=sys.stderr)
         return 2
 
-    # Manual workflow runs can test Discord without making a fake stock claim.
+    # Both manual and automatic modes query the exact same live Apple endpoint and parser.
+    available = extract_available(fetch_inventory())
+
+    # Manual mode always reports the current live result, even when nothing is available.
+    # It deliberately does not alter deduplication state or ping @everyone.
     if os.environ.get("TEST_WEBHOOK", "").lower() == "true":
-        send_discord(webhook, test_discord_payload())
-        print("Sent Discord test alert.")
+        send_discord(webhook, manual_discord_payload(available))
+        print(f"Sent manual live inventory check with {len(available)} available option(s).")
         return 0
 
-    available = extract_available(fetch_inventory())
     current = fingerprint(available)
     previous = STATE_FILE.read_text().strip() if STATE_FILE.exists() else ""
 
