@@ -1,0 +1,17 @@
+name: One-shot live Apple probe
+'on':
+  push:
+    branches: [main]
+    paths: ['.github/workflows/manual-probe.yml']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: macos-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Probe live inventory
+        run: python3 tui.py --once --no-discord
