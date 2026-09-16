@@ -1,40 +1,51 @@
 name: Apple Stock Monitor
+run-name: Apple stock | ${{ github.event_name }} | ${{ inputs.test_webhook && 'manual live report' || 'automatic check' }}
 
 on:
   schedule:
-    # Five minutes is GitHub Actions' minimum supported cron interval.
-    - cron: "*/5 * * * *"
+    # Still every five minutes; offset from the busiest minute at the top of the hour.
+    - cron: '2-59/5 * * * *'
+  push:
+    branches: [main]
+    paths: ['monitor.py', 'tests/**', '.github/workflows/monitor.yml']
   workflow_dispatch:
     inputs:
       test_webhook:
-        description: "Send a clearly labeled Discord test message instead of checking stock"
+        description: 'Send live Apple inventory to Discord even without stock (no @everyone)'
         required: true
         type: boolean
         default: false
 
+# The monitoring job needs no repository writes and never exposes the webhook.
 permissions:
   contents: read
 
+# Finish an in-flight alert and state save before starting another check.
 concurrency:
   group: apple-stock-monitor
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 5
     steps:
-      # v7 is the current checkout major and uses the modern Node runtime.
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
-      # v6 is the current cache major. Each run gets a unique save key while
-      # restore-keys loads the newest prior stock fingerprint for deduplication.
-      - name: Restore alert state
+      - name: Run regression tests
+        run: python3 -m unittest discover -s tests -v
+
+      # Manual reports neither read nor save the automatic notification state.
+      # Include the attempt number so a re-run can save new state too.
+      - name: Restore and save alert state
+        if: ${{ !inputs.test_webhook }}
         uses: actions/cache@v6
         with:
           path: .stock-state
-          key: stock-state-${{ github.run_id }}
+          key: stock-state-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             stock-state-
 
@@ -42,4 +53,5 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           TEST_WEBHOOK: ${{ inputs.test_webhook || 'false' }}
+          PYTHONUNBUFFERED: '1'
         run: python3 monitor.py
