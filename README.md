@@ -75,7 +75,7 @@ TEST_WEBHOOK=false python3 monitor.py
 ## Repository
 
 ```text
-.github/workflows/monitor.yml  Five-minute configuration, tests, manual mode, cache
+.github/workflows/watch.yml  Five-minute configuration, tests, manual mode, cache
 monitor.py                    Validated Apple check, confirmation, Discord, state
 tests/test_monitor.py         Offline parser, failure, fallback, and delivery tests
 README.md                     Setup, behavior, and operational limitations

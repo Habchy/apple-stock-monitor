@@ -7,7 +7,7 @@ on:
     - cron: '2-59/5 * * * *'
   push:
     branches: [main]
-    paths: ['monitor.py', 'tests/**', '.github/workflows/monitor.yml']
+    paths: ['monitor.py', 'tests/**', '.github/workflows/watch.yml']
   workflow_dispatch:
     inputs:
       test_webhook:
