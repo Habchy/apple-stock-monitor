@@ -1,0 +1,10 @@
+name: 🔔 Push Alert
+on: push
+
+permissions: {}
+
+jobs:
+  call-push-alert:
+    uses: charbel-security/security-workflows/.github/workflows/push-alert.yml@57a63a3946fbba4092163a52251824f577321eef
+    secrets:
+      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
